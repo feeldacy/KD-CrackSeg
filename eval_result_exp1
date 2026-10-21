@@ -1,0 +1,16 @@
+{
+  "dataset": "DeepCrack",
+  "split": "test",
+  "checkpoint": "runs\\exp1\\best.pth",
+  "images": 237,
+  "threshold": 0.5,
+  "metrics": {
+    "acc": 0.9824412543059338,
+    "precision": 0.7735678486944766,
+    "recall": 0.8402031027771404,
+    "f1": 0.8055096862582035,
+    "iou": 0.6743543757253064,
+    "dice": 0.7528670065513643,
+    "iou_img": 0.6251139691107384
+  }
+}

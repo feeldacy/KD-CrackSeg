@@ -64,15 +64,15 @@ class LACTNet(nn.Module):
         self.bnd_fusion = fusion_heads.FusionHead(4, 1)
 
     def forward(self, x, gts=None):
-        # Swin branch — PatchEmbed/PosEmbed output BHWC, permute to BCHW for SwinTransformerBlock
-        s = self.patch_embed(x)                    # (B, 64, 64, 64) BHWC
-        s = self.pos_embed(s)                      # (B, 64, 64, 64) BHWC
-        s = s.permute(0, 3, 1, 2)                  # (B, 64, 64, 64) BCHW
-
-        s1 = self.swin1(s)                         # (B, 64,  64, 64)
-        s2 = self.swin2(self.swin_down1(s1))       # (B, 128, 32, 32)
-        s3 = self.swin3(self.swin_down2(s2))       # (B, 256, 16, 16)
-        s4 = self.swin4(self.swin_down3(s3))       # (B, 512,  8,  8)
+        # Swin stages use BHWC, while convolutions and fusion use BCHW.
+        s = self.pos_embed(self.patch_embed(x))
+        s1 = self.swin1(s)
+        s2_in = self.swin_down1(s1.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+        s2 = self.swin2(s2_in)
+        s3_in = self.swin_down2(s2.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+        s3 = self.swin3(s3_in)
+        s4_in = self.swin_down3(s3.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+        s4 = self.swin4(s4_in)
 
         # ConvBlock branch
         c1 = self.conv1(x)                         # (B, 32,  128, 128)
@@ -81,11 +81,11 @@ class LACTNet(nn.Module):
         c4 = self.conv4(c3)                        # (B, 256,  16,  16)
         c5 = self.conv5(c4)                        # (B, 512,   8,   8)
 
-        # Fusion (both branches are BCHW now)
-        f1 = self.affm1(s1, c2)
-        f2 = self.affm2(s2, c3)
-        f3 = self.affm3(s3, c4)
-        f4 = self.affm4(s4, c5)
+        # Convert Swin features to BCHW for fusion.
+        f1 = self.affm1(s1.permute(0, 3, 1, 2), c2)
+        f2 = self.affm2(s2.permute(0, 3, 1, 2), c3)
+        f3 = self.affm3(s3.permute(0, 3, 1, 2), c4)
+        f4 = self.affm4(s4.permute(0, 3, 1, 2), c5)
 
         # Decoder
         d1 = self.d1(f4, f3)
