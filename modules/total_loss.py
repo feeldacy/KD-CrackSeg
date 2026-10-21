@@ -73,3 +73,25 @@ class FocalDiceLoss(nn.Module):
         loss_focal = self.focal(pred, target)
         loss_dice = self.dice(pred, target)
         return (self.focal_weight * loss_focal) + (self.dice_weight * loss_dice)
+
+class LogitsLoss(nn.Module):
+    """Takes raw logits, applies sigmoid, and runs the wrapped loss in fp32."""
+    def __init__(self, loss):
+        super().__init__()
+        self.loss = loss
+
+    def forward(self, logits, target):
+        with torch.autocast(device_type="cuda", enabled=False):   # BCELoss is not autocast-safe
+            prob = torch.sigmoid(logits.float())
+            return self.loss(prob, target.float())
+
+
+LOSSES = {
+    "dice_bce":   lambda **kw: LogitsLoss(CombinedLoss(**kw)),
+    "dice_focal": lambda **kw: LogitsLoss(FocalDiceLoss(**kw)),
+}
+
+def build_loss(name, **kwargs):
+    if name not in LOSSES:
+        raise KeyError(f"Unknown loss '{name}'. Available: {list(LOSSES)}")
+    return LOSSES[name](**kwargs)

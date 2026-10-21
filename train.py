@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from data.registry import get_pairs
 from data.registry import SegDataset
 from teacher_lactnet import LACTNet
+from modules.total_loss import build_loss
 
 # ---------- 1. setup ----------
 p = argparse.ArgumentParser()
@@ -14,6 +15,10 @@ p.add_argument("--epochs", type=int, default=100)
 p.add_argument("--bs", type=int, default=8)
 p.add_argument("--lr", type=float, default=1e-4)
 p.add_argument("--out", default="runs/exp1")
+p.add_argument("--loss", default="dice_bce", choices=["dice_bce", "dice_focal"])
+p.add_argument("--bnd_loss", default="dice_bce", choices=["dice_bce", "dice_focal"])
+p.add_argument("--bnd_w", type=float, default=0.5)
+p.add_argument("--aux_w", type=float, default=0.5)
 args = p.parse_args()
 os.makedirs(args.out, exist_ok=True)
 
@@ -32,13 +37,8 @@ val_loader = DataLoader(SegDataset(pairs, thr, 256, train=False),
 # ---------- 3. model, loss, optimizer ----------
 model = LACTNet().to(device)
 
-def dice_loss(logits, target, eps=1.0):
-    p = torch.sigmoid(logits).flatten(1)
-    t = target.flatten(1)
-    return 1 - ((2 * (p * t).sum(1) + eps) / (p.sum(1) + t.sum(1) + eps)).mean()
-
-def seg_loss(logits, target):
-    return F.binary_cross_entropy_with_logits(logits, target) + dice_loss(logits, target)
+sem_criterion = build_loss(args.loss)
+bnd_criterion = build_loss(args.bnd_loss)
 
 def make_boundary(mask, k=3):
     """boundary GT from the mask: dilation - erosion"""
@@ -78,9 +78,9 @@ for epoch in range(args.epochs):
 
         with torch.autocast(device_type="cuda", enabled=(device == "cuda")):
             out = model(img, gts=[mask, mask])
-            loss = (seg_loss(out["pred_semantic"], mask)
-                    + 0.5 * seg_loss(out["pred_boundary"], bnd)
-                    + 0.5 * out["supervision_loss"])
+            loss = (sem_criterion(out["pred_semantic"], mask)            
+                    + args.bnd_w * bnd_criterion(out["pred_boundary"], bnd)
+                    + args.aux_w * out["supervision_loss"])
 
         opt.zero_grad(set_to_none=True)
         scaler.scale(loss).backward()
