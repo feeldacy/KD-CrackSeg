@@ -1,19 +1,21 @@
-_deafults: &defaults
-    mask__threshold: 127
-    img_exst: [.jpg, .jpeg, .png]
+_defaults: &defaults
+    mask_threshold: 127
 
 DeepCrack: 
-  <<: *deaults
+  <<: *defaults
   root: D:/DeepCrack/
-  mask_suffix: ""
   mask_ext: .png
-  splits:
-    train: {img_dir: train_img, mask_dir: train_lab}
-    test: {img_dir: test_img, mask_dir: test_lab}
+  img_dir:
+    train: train_img
+    test: test_img
+  mask_dir:
+    train: train_lab
+    test: test_lab
   
 Crack500:
   <<: *defaults
   root: D:/CRACK500/
-  train: {lst: train.txt}
-  val: {lst: val.txt}
-  test: {lst: test.txt}
+  lists:
+    train: train.txt
+    val: val.txt
+    test: test.txt

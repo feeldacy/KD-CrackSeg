@@ -133,6 +133,11 @@ class SwinTransformerBlock(nn.Module):
 
     def _attn(self, x):
         B, H, W, C = x.shape
+        pad_h = (self.window_size[0] - H % self.window_size[0]) % self.window_size[0]
+        pad_w = (self.window_size[1] - W % self.window_size[1]) % self.window_size[1]
+        if pad_h or pad_w:
+            x = torch.nn.functional.pad(x, (0, 0, 0, pad_w, 0, pad_h))
+        H_pad, W_pad = x.shape[1:3]
 
         # cyclic shift
         if self.shift_size:
@@ -149,7 +154,7 @@ class SwinTransformerBlock(nn.Module):
 
         # merge windows
         attn_windows = attn_windows.view(-1, self.window_size[0], self.window_size[1], C)
-        shifted_x = window_reverse(attn_windows, self.window_size, H, W)  # B H' W' C
+        shifted_x = window_reverse(attn_windows, self.window_size, H_pad, W_pad)
         shifted_x = shifted_x[:, :H, :W, :].contiguous()
 
         # reverse cyclic shift

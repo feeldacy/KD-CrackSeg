@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from modules import patch_embedding, position_embedding, swin_transformer, dcu, conv_block, affm, lam, fusion_heads
+from modules import patch_embedding, position_embedding, swin_transformer, duc, conv_block, affm, lam, fusion_heads
 
 class LACTNet(nn.Module):
     def __init__(self, in_ch=3, num_classes=1):
@@ -12,11 +12,11 @@ class LACTNet(nn.Module):
         self.patch_embed = patch_embedding.PatchEmbedding(in_ch, 64, patch_size=4)
         self.pos_embed = position_embedding.PositionEmbedding(embed_dim=64, img_size=256, patch_size=4)
 
-        # SwinTransformerBlock = paired W-MSA + SW-MSA, expects/returns (B, C, H, W)
-        self.swin1 = swin_transformer.SwinTransformerBlock(64, num_heads=2)
-        self.swin2 = swin_transformer.SwinTransformerBlock(128, num_heads=4)
-        self.swin3 = swin_transformer.SwinTransformerBlock(256, num_heads=8)
-        self.swin4 = swin_transformer.SwinTransformerBlock(512, num_heads=16)
+        # Each Swin stage applies window attention and shifted-window attention.
+        self.swin1 = swin_transformer.SwinBlock(64, (64, 64))
+        self.swin2 = swin_transformer.SwinBlock(128, (32, 32))
+        self.swin3 = swin_transformer.SwinBlock(256, (16, 16))
+        self.swin4 = swin_transformer.SwinBlock(512, (8, 8))
 
         # Downsample between Swin stages: halve spatial, double channels
         self.swin_down1 = nn.Conv2d(64, 128, kernel_size=2, stride=2)
@@ -37,10 +37,10 @@ class LACTNet(nn.Module):
         self.affm4 = affm.AFFM(512, 512)
 
         # ---------- Decoder (Upblocks D1..D4) ----------
-        self.d1 = dcu.DUC(512, 256, 256)
-        self.d2 = dcu.DUC(256, 128, 128)
-        self.d3 = dcu.DUC(128, 64, 64)
-        self.d4 = dcu.DUC(64, 32, 32)
+        self.d1 = duc.DUC(512, 256, 256)
+        self.d2 = duc.DUC(256, 128, 128)
+        self.d3 = duc.DUC(128, 64, 64)
+        self.d4 = duc.DUC(64, 32, 32)
 
         # ---------- LAMs ----------
         self.lam3 = lam.LAM(128)

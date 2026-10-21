@@ -1,5 +1,6 @@
 import os, yaml
 from pathlib import Path
+import random
 
 def get_pairs(name, split, yaml_path="datasets.yaml", data_root=None):
     cfg = yaml.safe_load(open(yaml_path))[name]
@@ -35,4 +36,12 @@ def get_pairs(name, split, yaml_path="datasets.yaml", data_root=None):
     print(f"[{name}/{split}] {len(pairs)} pairs")
     return pairs, cfg["mask_threshold"]
 
+def split_pairs(pairs, val_ratio=0.1, seed=0):
+    """Reproducible hold-out split. Same seed gives the same split every run."""
+    idx = list(range(len(pairs)))
+    random.Random(seed).shuffle(idx)
+    n_val = max(1, int(len(pairs) * val_ratio))
+    val = [pairs[i] for i in idx[:n_val]]
+    train = [pairs[i] for i in idx[n_val:]]
+    return train, val
     
