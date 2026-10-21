@@ -3,8 +3,8 @@ import numpy as np
 import torch, torch.nn as nn, torch.nn.functional as F
 from torch.utils.data import DataLoader
 from data.registry import get_pairs
-from data.dataset import SegDataset
-from model import LACTNet
+from data.registry import SegDataset
+from teacher_lactnet import LACTNet
 
 # ---------- 1. setup ----------
 p = argparse.ArgumentParser()
