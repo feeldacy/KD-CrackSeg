@@ -2,13 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from modules import patch_embedding, position_embedding, swin_transformer, duc, conv_block, affm, lam, fusion_heads
+from modules import duc, conv_block, lam, fusion_heads
 
 class LACTNet(nn.Module):
     def __init__(self, in_ch=3, num_classes=1):
         super().__init__()
 
-        
         # ---------- ConvBlock branch (middle), each one downsamples x2 ----------
         self.conv1 = conv_block.ConvBlock(in_ch, 32)
         self.conv2 = conv_block.ConvBlock(32, 64)
@@ -66,7 +65,7 @@ class LACTNet(nn.Module):
         main_sem, main_bnd = self.main_sem(d4), self.main_bnd(d4)
         s8_sem,  s8_bnd  = self.side8(d2)     # d2 is already post-lam3 here
         s16_sem, s16_bnd = self.side16(d1)
-        s32_sem, s32_bnd = self.side32(f4)
+        s32_sem, s32_bnd = self.side32(c5)
 
         pred_semantic = self.sem_fusion(torch.cat(
             [main_sem, up(s8_sem), up(s16_sem), up(s32_sem)], dim=1))

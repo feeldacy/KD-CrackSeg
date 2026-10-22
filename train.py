@@ -1,6 +1,7 @@
 import argparse
 import os
 import random
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -11,7 +12,8 @@ from torch.utils.data import DataLoader
 from data.registry import get_pairs, split_pairs
 from dataset import SegDataset
 from modules.total_loss import build_loss
-from teacher_lactnet import LACTNet
+from student_lactnet import LACTNet as StudentLACTNet
+from teacher_lactnet import LACTNet as TeacherLACTNet
 
 
 def make_boundary(mask, k=3):
@@ -19,6 +21,23 @@ def make_boundary(mask, k=3):
     dil = F.max_pool2d(mask, k, 1, k // 2)
     ero = -F.max_pool2d(-mask, k, 1, k // 2)
     return (dil - ero).clamp(0, 1)
+
+
+def distillation_loss(student_logits, teacher_logits, temperature):
+    """Bernoulli KL distillation for binary segmentation logits."""
+    student_logits = student_logits.float() / temperature
+    teacher_probs = torch.sigmoid(teacher_logits.float() / temperature)
+    teacher_probs = teacher_probs.clamp(1e-7, 1.0 - 1e-7)
+    student_log_probs = torch.cat(
+        [F.logsigmoid(-student_logits), F.logsigmoid(student_logits)], dim=1
+    )
+    teacher_probs = torch.cat([1.0 - teacher_probs, teacher_probs], dim=1)
+    return (
+        F.kl_div(student_log_probs, teacher_probs, reduction="none")
+        .sum(dim=1)
+        .mean()
+        * temperature**2
+    )
 
 
 @torch.no_grad()
@@ -43,9 +62,40 @@ def evaluate(model, loader, device):
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Train LACTNet, its student, or the student with teacher distillation.",
+        epilog=(
+            "Examples: --mode standard; --mode student; "
+            "--mode distill --teacher_checkpoint runs/teacher/best.pth"
+        ),
+    )
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--data_root", default=None)
+    parser.add_argument(
+        "--mode",
+        choices=["standard", "distill", "student"],
+        default="standard",
+        help="standard trains the teacher; student trains LACTNet-S without a teacher; "
+        "distill trains LACTNet-S using a frozen teacher",
+    )
+    parser.add_argument(
+        "--teacher_checkpoint",
+        type=Path,
+        default=None,
+        help="Required for --mode distill; accepts best.pth or last.pth",
+    )
+    parser.add_argument(
+        "--kd_w",
+        type=float,
+        default=1.0,
+        help="Weight of teacher-student distillation loss",
+    )
+    parser.add_argument(
+        "--kd_temperature",
+        type=float,
+        default=2.0,
+        help="Temperature for teacher-student distillation",
+    )
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--bs", type=int, default=8)
     parser.add_argument("--lr", type=float, default=1e-4)
@@ -57,6 +107,16 @@ def main():
     parser.add_argument("--val_ratio", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
+
+    if args.mode == "distill" and args.teacher_checkpoint is None:
+        parser.error("--teacher_checkpoint is required when --mode distill")
+    if args.teacher_checkpoint is not None and not args.teacher_checkpoint.is_file():
+        parser.error(f"Teacher checkpoint does not exist: {args.teacher_checkpoint}")
+    if args.kd_temperature <= 0:
+        parser.error("--kd_temperature must be greater than 0")
+    if args.kd_w < 0:
+        parser.error("--kd_w cannot be negative")
+
     os.makedirs(args.out, exist_ok=True)
 
     random.seed(args.seed)
@@ -93,7 +153,22 @@ def main():
     # Evaluate the held-out test split once training is complete:
     # python evaluate.py --dataset DATASET --checkpoint runs/exp1/best.pth
 
-    model = LACTNet().to(device)
+    model_cls = TeacherLACTNet if args.mode == "standard" else StudentLACTNet
+    model = model_cls().to(device)
+    teacher = None
+    if args.mode == "distill":
+        teacher = TeacherLACTNet().to(device)
+        checkpoint = torch.load(
+            args.teacher_checkpoint, map_location=device, weights_only=True
+        )
+        teacher_state = (
+            checkpoint["model"]
+            if isinstance(checkpoint, dict) and "model" in checkpoint
+            else checkpoint
+        )
+        teacher.load_state_dict(teacher_state)
+        teacher.eval()
+
     sem_criterion = build_loss(args.loss)
     bnd_criterion = build_loss(args.bnd_loss)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
@@ -104,17 +179,32 @@ def main():
     for epoch in range(args.epochs):
         model.train()
         running = 0.0
+        running_kd = 0.0
         for img, mask in train_loader:
             img, mask = img.to(device), mask.to(device)
             bnd = make_boundary(mask)
 
             with torch.autocast(device_type="cuda", enabled=(device == "cuda")):
                 out = model(img, gts=[mask, mask])
-                loss = (
+                supervised_loss = (
                     sem_criterion(out["pred_semantic"], mask)
                     + args.bnd_w * bnd_criterion(out["pred_boundary"], bnd)
                     + args.aux_w * out["supervision_loss"]
                 )
+                kd_loss = torch.zeros((), device=device)
+                if teacher is not None:
+                    with torch.no_grad():
+                        teacher_out = teacher(img)
+                    kd_loss = distillation_loss(
+                        out["pred_semantic"],
+                        teacher_out["pred_semantic"],
+                        args.kd_temperature,
+                    ) + distillation_loss(
+                        out["pred_boundary"],
+                        teacher_out["pred_boundary"],
+                        args.kd_temperature,
+                    )
+                loss = supervised_loss + args.kd_w * kd_loss
 
             opt.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
@@ -123,17 +213,30 @@ def main():
             scaler.step(opt)
             scaler.update()
             running += loss.item()
+            running_kd += kd_loss.item()
 
         sched.step()
         metrics = evaluate(model, val_loader, device)
-        print(
-            f"epoch {epoch + 1}/{args.epochs} loss {running / len(train_loader):.4f} | "
+        log = (
+            f"epoch {epoch + 1}/{args.epochs} loss {running / len(train_loader):.4f}"
+        )
+        if teacher is not None:
+            log += f" KD {running_kd / len(train_loader):.4f}"
+        log += (
+            f" | "
             f"val IoU {metrics['iou']:.4f} F1 {metrics['f1']:.4f} "
             f"P {metrics['precision']:.4f} R {metrics['recall']:.4f}"
         )
+        print(log)
 
         torch.save(
-            {"model": model.state_dict(), "opt": opt.state_dict(), "epoch": epoch},
+            {
+                "model": model.state_dict(),
+                "opt": opt.state_dict(),
+                "epoch": epoch,
+                "model_type": "teacher" if args.mode == "standard" else "student",
+                "mode": args.mode,
+            },
             f"{args.out}/last.pth",
         )
         if metrics["f1"] > best_f1:

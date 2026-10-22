@@ -10,7 +10,8 @@ from torch.utils.data import DataLoader
 from data.registry import get_pairs
 from dataset import SegDataset
 from modules.metrics import EvalMetrics
-from teacher_lactnet import LACTNet
+from student_lactnet import LACTNet as StudentLACTNet
+from teacher_lactnet import LACTNet as TeacherLACTNet
 
 
 def save_visualization(image_path, target, prediction, output_path):
@@ -50,6 +51,12 @@ def main() -> None:
     )
     parser.add_argument("--dataset", required=True, help="Dataset name from datasets.yaml")
     parser.add_argument("--checkpoint", required=True, type=Path, help="Path to best.pth")
+    parser.add_argument(
+        "--model",
+        choices=["teacher", "student"],
+        default="teacher",
+        help="Architecture used by the checkpoint",
+    )
     parser.add_argument("--data_root", default=None, help="Override DATA_ROOT for relative dataset roots")
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--num_workers", type=int, default=4)
@@ -91,7 +98,8 @@ def main() -> None:
         pin_memory=(device.type == "cuda"),
     )
 
-    model = LACTNet().to(device)
+    model_cls = TeacherLACTNet if args.model == "teacher" else StudentLACTNet
+    model = model_cls().to(device)
     checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=True)
     state_dict = checkpoint["model"] if isinstance(checkpoint, dict) and "model" in checkpoint else checkpoint
     model.load_state_dict(state_dict)
@@ -129,6 +137,7 @@ def main() -> None:
 
     results = metrics.compute()
     print(f"Dataset: {args.dataset} (test)")
+    print(f"Model: {args.model}")
     print(f"Checkpoint: {args.checkpoint}")
     print(f"Images: {len(test_set)}")
     print(f"Threshold: {args.threshold:.2f}")
@@ -142,6 +151,7 @@ def main() -> None:
         report = {
             "dataset": args.dataset,
             "split": "test",
+            "model": args.model,
             "checkpoint": str(args.checkpoint),
             "images": len(test_set),
             "threshold": args.threshold,
