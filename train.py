@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from data.registry import get_pairs, split_pairs
 from dataset import SegDataset
@@ -41,10 +42,10 @@ def distillation_loss(student_logits, teacher_logits, temperature):
 
 
 @torch.no_grad()
-def evaluate(model, loader, device):
+def evaluate(model, loader, device, progress_desc="Validation"):
     model.eval()
     tp = fp = fn = 0
-    for img, mask in loader:
+    for img, mask in tqdm(loader, desc=progress_desc, leave=False):
         img, mask = img.to(device), mask.to(device)
         pred = torch.sigmoid(model(img)["pred_semantic"]) > 0.5
         m = mask > 0.5
@@ -140,7 +141,7 @@ def main():
         batch_size=args.bs,
         shuffle=True,
         num_workers=8,
-        pin_memory=True,
+        pin_memory=torch.cuda.is_available(),
         drop_last=True,
     )
     val_loader = DataLoader(
@@ -180,7 +181,12 @@ def main():
         model.train()
         running = 0.0
         running_kd = 0.0
-        for img, mask in train_loader:
+        train_progress = tqdm(
+            train_loader,
+            desc=f"Train {epoch + 1}/{args.epochs}",
+            leave=False,
+        )
+        for batch_index, (img, mask) in enumerate(train_progress, start=1):
             img, mask = img.to(device), mask.to(device)
             bnd = make_boundary(mask)
 
@@ -214,9 +220,18 @@ def main():
             scaler.update()
             running += loss.item()
             running_kd += kd_loss.item()
+            postfix = {"loss": f"{running / batch_index:.4f}"}
+            if teacher is not None:
+                postfix["kd"] = f"{running_kd / batch_index:.4f}"
+            train_progress.set_postfix(postfix)
 
         sched.step()
-        metrics = evaluate(model, val_loader, device)
+        metrics = evaluate(
+            model,
+            val_loader,
+            device,
+            progress_desc=f"Validation {epoch + 1}/{args.epochs}",
+        )
         log = (
             f"epoch {epoch + 1}/{args.epochs} loss {running / len(train_loader):.4f}"
         )
@@ -227,7 +242,7 @@ def main():
             f"val IoU {metrics['iou']:.4f} F1 {metrics['f1']:.4f} "
             f"P {metrics['precision']:.4f} R {metrics['recall']:.4f}"
         )
-        print(log)
+        tqdm.write(log)
 
         torch.save(
             {
