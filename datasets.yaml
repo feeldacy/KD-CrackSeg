@@ -3,7 +3,7 @@ _defaults: &defaults
 
 DeepCrack: 
   <<: *defaults
-  root: D:/DeepCrack/
+  root: E:/DeepCrack/
   mask_ext: .png
   img_dir:
     train: train_img
@@ -14,7 +14,7 @@ DeepCrack:
   
 Crack500:
   <<: *defaults
-  root: D:/CRACK500/
+  root: E:/CRACK500/
   lists:
     train: train.txt
     val: val.txt
