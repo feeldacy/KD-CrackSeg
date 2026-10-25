@@ -1,0 +1,17 @@
+{
+  "dataset": "Crack500",
+  "split": "test",
+  "model": "student",
+  "checkpoint": "runs\\student_exp3_crack500_distill_dicefocal\\best.pth",
+  "images": 1124,
+  "threshold": 0.5,
+  "metrics": {
+    "acc": 0.9685031850142821,
+    "precision": 0.6991492121661974,
+    "recall": 0.7664105766262996,
+    "f1": 0.7312363758612466,
+    "iou": 0.5763378147040593,
+    "dice": 0.6887830648557995,
+    "iou_img": 0.5482218080992376
+  }
+}

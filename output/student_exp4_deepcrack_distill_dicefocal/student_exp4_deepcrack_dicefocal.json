@@ -1,0 +1,17 @@
+{
+  "dataset": "DeepCrack",
+  "split": "test",
+  "model": "student",
+  "checkpoint": "runs\\student_exp4_deepcrack_distill_dicefocal\\best.pth",
+  "images": 237,
+  "threshold": 0.5,
+  "metrics": {
+    "acc": 0.9851254491363333,
+    "precision": 0.8602024985709381,
+    "recall": 0.7836461500924192,
+    "f1": 0.8201416059149157,
+    "iou": 0.6951187486555154,
+    "dice": 0.7991490967666046,
+    "iou_img": 0.6847521866424174
+  }
+}
