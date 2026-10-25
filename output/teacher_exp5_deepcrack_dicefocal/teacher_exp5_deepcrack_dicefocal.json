@@ -1,0 +1,17 @@
+{
+  "dataset": "DeepCrack",
+  "split": "test",
+  "model": "teacher",
+  "checkpoint": "runs\\teacher_exp5_deepcrack_dicefocal\\best.pth",
+  "images": 237,
+  "threshold": 0.5,
+  "metrics": {
+    "acc": 0.9859631373409417,
+    "precision": 0.8540459295915397,
+    "recall": 0.8149134447729428,
+    "f1": 0.8340208629005437,
+    "iou": 0.7152966310298459,
+    "dice": 0.804210602482663,
+    "iou_img": 0.6890811729028758
+  }
+}
