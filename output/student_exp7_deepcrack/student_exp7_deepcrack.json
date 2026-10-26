@@ -1,0 +1,17 @@
+{
+  "dataset": "DeepCrack",
+  "split": "test",
+  "model": "student",
+  "checkpoint": "runs\\student_exp7_deepcrack\\best.pth",
+  "images": 237,
+  "threshold": 0.5,
+  "metrics": {
+    "acc": 0.9860947363487212,
+    "precision": 0.8473934544323463,
+    "recall": 0.8277583713691097,
+    "f1": 0.8374607878197898,
+    "iou": 0.7203721517970306,
+    "dice": 0.8081025312721478,
+    "iou_img": 0.6953993386860136
+  }
+}
