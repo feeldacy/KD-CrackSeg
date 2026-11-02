@@ -8,7 +8,8 @@ from PIL import Image, ImageDraw
 from torch.utils.data import DataLoader
 
 from data.registry import get_pairs
-from dataset import SegDataset
+from dataset import DCMAImageDataset, SegDataset
+from dcma_net import DCMANet
 from modules.metrics import EvalMetrics
 from student_lactnet import LACTNet as StudentLACTNet
 from teacher_lactnet import LACTNet as TeacherLACTNet
@@ -53,7 +54,7 @@ def main() -> None:
     parser.add_argument("--checkpoint", required=True, type=Path, help="Path to best.pth")
     parser.add_argument(
         "--model",
-        choices=["teacher", "student"],
+        choices=["teacher", "student", "dcma"],
         default="teacher",
         help="Architecture used by the checkpoint",
     )
@@ -89,7 +90,10 @@ def main() -> None:
     test_pairs, mask_threshold = get_pairs(args.dataset, "test", data_root=args.data_root)
     if args.vis_index < 0 or args.vis_index >= len(test_pairs):
         parser.error(f"--vis_index must be between 0 and {len(test_pairs) - 1}")
-    test_set = SegDataset(test_pairs, mask_threshold, img_size=256, train=False)
+    if args.model == "dcma":
+        test_set = DCMAImageDataset(test_pairs, mask_threshold, (544, 384), train=False)
+    else:
+        test_set = SegDataset(test_pairs, mask_threshold, img_size=256, train=False)
     test_loader = DataLoader(
         test_set,
         batch_size=args.batch_size,
@@ -98,8 +102,11 @@ def main() -> None:
         pin_memory=(device.type == "cuda"),
     )
 
-    model_cls = TeacherLACTNet if args.model == "teacher" else StudentLACTNet
-    model = model_cls().to(device)
+    if args.model == "dcma":
+        model = DCMANet().to(device)
+    else:
+        model_cls = TeacherLACTNet if args.model == "teacher" else StudentLACTNet
+        model = model_cls().to(device)
     checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=True)
     state_dict = checkpoint["model"] if isinstance(checkpoint, dict) and "model" in checkpoint else checkpoint
     model.load_state_dict(state_dict)

@@ -9,7 +9,7 @@ def split_image(img, n_w=4, n_h=3):
     ph, pw = H // n_h, W // n_w
     
     patches = img.unfold(2, ph, ph).unfold(3, pw, pw)
-    patches = patches.premute(0, 2, 3, 1, 4, 5)
+    patches = patches.permute(0, 2, 3, 1, 4, 5)
     patches = patches.reshape(B, n_h * n_w, C, ph, pw)
     return patches
 

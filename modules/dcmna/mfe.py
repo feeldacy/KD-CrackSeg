@@ -45,7 +45,7 @@ class MFE(nn.Module):
 
         self.layers = nn.ModuleList(branch_layers)
         self.fusion = nn.Conv2d(
-            (num_layers * len(self.dilations) + 1) * out_channels,
+            num_layers * len(self.dilations) * out_channels,
             out_channels,
             kernel_size=1,
             bias=False,
@@ -68,4 +68,6 @@ class MFE(nn.Module):
             previous_layer_features = torch.cat(branch_outputs, dim=1)
             layer_outputs.extend(branch_outputs)
 
-        return self.fusion(torch.cat([stem_features] + layer_outputs, dim=1))
+        # Eq. (2): fuse the stacked multi-scale features and add the stem
+        # projection back through the skip connection.
+        return self.fusion(torch.cat(layer_outputs, dim=1)) + stem_features

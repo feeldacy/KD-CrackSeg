@@ -11,7 +11,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from data.registry import get_pairs, split_pairs
-from dataset import SegDataset
+from dataset import DCMAImageDataset, SegDataset
+from dcma_net import DCMANet
 from modules.total_loss import build_loss
 from student_lactnet import LACTNet as StudentLACTNet
 from teacher_lactnet import LACTNet as TeacherLACTNet
@@ -73,6 +74,14 @@ def main():
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--data_root", default=None)
     parser.add_argument(
+        "--arch",
+        choices=["lactnet", "dcma"],
+        default="lactnet",
+        help="Architecture to train. 'lactnet' keeps the existing teacher/student "
+             "behaviour unchanged; 'dcma' trains the dual-channel DCMA-Net on "
+             "full 544x384 images with a BCE + Dice loss.",
+    )
+    parser.add_argument(
         "--mode",
         choices=["standard", "distill", "student"],
         default="standard",
@@ -109,6 +118,11 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
+    if args.arch == "dcma" and args.mode != "standard":
+        parser.error(
+            "--arch dcma currently supports --mode standard only "
+            "(DCMA-Net has no separate student/teacher pair)."
+        )
     if args.mode == "distill" and args.teacher_checkpoint is None:
         parser.error("--teacher_checkpoint is required when --mode distill")
     if args.teacher_checkpoint is not None and not args.teacher_checkpoint.is_file():
@@ -136,8 +150,16 @@ def main():
     with open(f"{args.out}/val_files.txt", "w") as f:
         f.write("\n".join(str(pair[0].name) for pair in val_pairs))
 
+    # DCMA-Net consumes whole 544x384 images; LACTNet keeps the 256x256 tiles.
+    if args.arch == "dcma":
+        train_set = DCMAImageDataset(train_pairs, thr, (544, 384), train=True)
+        val_set = DCMAImageDataset(val_pairs, thr, (544, 384), train=False)
+    else:
+        train_set = SegDataset(train_pairs, thr, 256, train=True)
+        val_set = SegDataset(val_pairs, thr, 256, train=False)
+
     train_loader = DataLoader(
-        SegDataset(train_pairs, thr, 256, train=True),
+        train_set,
         batch_size=args.bs,
         shuffle=True,
         num_workers=8,
@@ -145,7 +167,7 @@ def main():
         drop_last=True,
     )
     val_loader = DataLoader(
-        SegDataset(val_pairs, thr, 256, train=False),
+        val_set,
         batch_size=args.bs,
         shuffle=False,
         num_workers=4,
@@ -154,8 +176,11 @@ def main():
     # Evaluate the held-out test split once training is complete:
     # python evaluate.py --dataset DATASET --checkpoint runs/exp1/best.pth
 
-    model_cls = TeacherLACTNet if args.mode == "standard" else StudentLACTNet
-    model = model_cls().to(device)
+    if args.arch == "dcma":
+        model = DCMANet().to(device)
+    else:
+        model_cls = TeacherLACTNet if args.mode == "standard" else StudentLACTNet
+        model = model_cls().to(device)
     teacher = None
     if args.mode == "distill":
         teacher = TeacherLACTNet().to(device)
@@ -192,11 +217,15 @@ def main():
 
             with torch.autocast(device_type="cuda", enabled=(device == "cuda")):
                 out = model(img, gts=[mask, mask])
-                supervised_loss = (
-                    sem_criterion(out["pred_semantic"], mask)
-                    + args.bnd_w * bnd_criterion(out["pred_boundary"], bnd)
-                    + args.aux_w * out["supervision_loss"]
-                )
+                if args.arch == "dcma":
+                    # Paper Eq. (14): L = L_bce + L_dice, no boundary head.
+                    supervised_loss = sem_criterion(out["pred_semantic"], mask)
+                else:
+                    supervised_loss = (
+                        sem_criterion(out["pred_semantic"], mask)
+                        + args.bnd_w * bnd_criterion(out["pred_boundary"], bnd)
+                        + args.aux_w * out["supervision_loss"]
+                    )
                 kd_loss = torch.zeros((), device=device)
                 if teacher is not None:
                     with torch.no_grad():
@@ -249,8 +278,10 @@ def main():
                 "model": model.state_dict(),
                 "opt": opt.state_dict(),
                 "epoch": epoch,
-                "model_type": "teacher" if args.mode == "standard" else "student",
+                "model_type": args.arch if args.arch == "dcma"
+                else ("teacher" if args.mode == "standard" else "student"),
                 "mode": args.mode,
+                "arch": args.arch,
             },
             f"{args.out}/last.pth",
         )
