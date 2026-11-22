@@ -1,0 +1,27 @@
+{
+  "dataset": "Concrete",
+  "split": "test",
+  "model": "teacher",
+  "checkpoint": "runs\\teacher_exp2_concrete\\best.pth",
+  "images": 126,
+  "threshold": 0.5,
+  "metrics": {
+    "acc": 0.8871805100213807,
+    "precision": 0.7115056625907586,
+    "recall": 0.6951661812169916,
+    "f1": 0.7032409746349245,
+    "iou": 0.5423066568145911,
+    "dice": 0.627814116932097,
+    "iou_img": 0.5072758585687668
+  },
+  "visualizations": [
+    "0000_-16_png.rf.baed088ea05f4546e41c400c4b8b81dc.png",
+    "0001_-2_png.rf.70b3f5bb55058a062bac1e1fd02f54a0.png",
+    "0002_-3_png.rf.03c0fbb0dad726b3cb6273bd2ed3ec3f.png",
+    "0003_1169_jpg.rf.b038b02fdcea08369c45bf4454f188ae.png",
+    "0004_1301_jpg.rf.eb58f813c25146811acce384dfc1061c.png",
+    "0005_2025-07-11-17-24-54_2_jpg.rf.5866e0fbfc6688c60754019fd369473a.png",
+    "0006_2108_jpg.rf.99d5ff0c2400922bf7be6a0415bc4fd4.png",
+    "0007_2114_jpg.rf.20d1356d8d7efe1c265953cb24038937.png"
+  ]
+}

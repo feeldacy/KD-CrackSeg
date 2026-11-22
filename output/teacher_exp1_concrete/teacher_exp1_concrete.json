@@ -1,0 +1,17 @@
+{
+  "dataset": "Concrete",
+  "split": "test",
+  "model": "teacher",
+  "checkpoint": "runs\\teacher_exp1_concrete\\best.pth",
+  "images": 126,
+  "threshold": 0.5,
+  "metrics": {
+    "acc": 0.9046169462658001,
+    "precision": 0.7651327708061425,
+    "recall": 0.7271945209792505,
+    "f1": 0.7456813589493018,
+    "iou": 0.5944912354947867,
+    "dice": 0.6767220326832363,
+    "iou_img": 0.5603141850895352
+  }
+}
