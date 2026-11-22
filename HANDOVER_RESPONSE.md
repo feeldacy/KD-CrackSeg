@@ -658,7 +658,8 @@ datasets or seeds, re-uploading the LFS archives, or rewriting the README.
   which was required to answer audit question P0-E #4 and is reported in full.
 * No new model, loss or feature was implemented. `modules/dcmna/*` (ASPP, CASK, MFE,
   ResNet) was left exactly as found — it is untracked work-in-progress from commit
-  `f4f83ad` / `e76cf4a` and is **not imported by any model**.
+  `f4f83ad` / `e76cf4a` and is **not imported by any model**. (These unused modules
+  have since been deleted along with the rest of the DCMA-Net family; see §11.)
 * No historical file was modified, renamed or deleted. The only new files in the working
   copy are the two documents produced for this handover:
   `HANDOVER_RESPONSE.md` (this file) and `manuscript.md` (the reconstructed manuscript
@@ -666,6 +667,44 @@ datasets or seeds, re-uploading the LFS archives, or rewriting the README.
 * The four stale `D` entries and the two renamed `runs/teacher_exp2*` folders were
   **left untouched** so that the original state is preserved; the team can commit the
   renames at will.
+
+---
+
+## 11. Post-handover change — DCMA-Net removal
+
+After this handover response was written, the DCMA-Net family was removed from
+the repository. **LACTNet (teacher and student) is the only model that remains.**
+
+| Removed | Notes |
+| --- | --- |
+| `dcma_net.py` | The `DCMANet` model and its `DCMAEncoder`. |
+| `light_dcma_net.py` | The depthwise-separable `LightDCMANet` variant (untracked). |
+| `modules/dcmna/*` | ASPP, CASK, MFE, ResNet encoder and the patch split/merge helpers. |
+| `modules/light_dcma/*` | The depthwise-separable copy of the same modules (untracked). |
+| `_flop_breakdown.py`, `_flop_ratio.py`, `_flop_variants.py` | DCMA-Net FLOP analysis scratch scripts (untracked). |
+| `runs/dcma_deepcrack/`, `output/dcma_deepcrack/` | The DCMA-Net training run and its evaluation report. |
+| `runs/dcma_crack500/`, `runs/light_dcma_deepcrack/`, `runs/test_dcma/`, `runs/test_dcmanet/`, `output/dcma_crack500/` | Untracked DCMA-Net runs and outputs. |
+
+Code changes made to strip the family out:
+
+- `train.py`: the `--arch` flag and the `DCMAImageDataset` / `DCMANet` branches are
+  gone; `--mode {standard,student,distill}` is unchanged. Checkpoints still record
+  `"arch": "lactnet"` and the `teacher` / `student` `model_type`.
+- `evaluate.py`: `--model` is now `{teacher,student}`; the `dcma` dataset and model
+  branches are gone.
+- `model_complexity.py`: the `dcma` entry is gone from `MODEL_CLASSES`,
+  `MODEL_INPUT_SIZES` and the `--model` choices.
+- `dataset.py`: the `DCMAImageDataset` class is gone; `SegDataset` is unchanged.
+- `arch_registry.py`: the `dcma` and `light_dcma` entries and their
+  parameter-name detection branches are gone; the `lactnet` family, its
+  `resolve_model_spec` and the teacher/student detection are unchanged.
+- `README.md`: the "DCMA-Net family" section is replaced by a short
+  "Model complexity" section.
+
+The `DCMA-Net [10]` rows in `manuscript.md` and the §1/§6.3 references in this
+document are **citations to the published paper** used as a baseline in the
+comparison tables — they are unrelated to the removed implementation and were
+deliberately kept.
 
 ---
 

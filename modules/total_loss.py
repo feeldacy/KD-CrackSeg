@@ -84,11 +84,52 @@ class LogitsLoss(nn.Module):
         with torch.autocast(device_type="cuda", enabled=False):   # BCELoss is not autocast-safe
             prob = torch.sigmoid(logits.float())
             return self.loss(prob, target.float())
+        
+class TverskyLoss(nn.Module):
+    """
+    Tversky Loss for binary segmentation.
+    Generalization of Dice Loss with tunable false positive/negative weighting.
+    TL = 1 - (TP + smooth) / (TP + alpha * FP + beta * FN + smooth)
+    """
+    def __init__(self, alpha=0.5, beta=0.5, smooth=1.0):
+        super().__init__()
+        self.alpha = alpha
+        self.beta = beta
+        self.smooth = smooth
+
+    def forward(self, pred, target):
+        pred = pred.contiguous().view(-1)
+        target = target.contiguous().view(-1)
+
+        TP = (pred * target).sum()
+        FP = ((1 - target) * pred).sum()
+        FN = (target * (1 - pred)).sum()
+
+        tversky_index = (TP + self.smooth) / (TP + self.alpha * FP + self.beta * FN + self.smooth)
+        return 1.0 - tversky_index
+    
+class FocalTverskyLoss(nn.Module):
+    """
+    Combined Focal Loss + Tversky Loss.
+    Ideal for extreme class imbalance like crack segmentation.
+    """
+    def __init__(self, focal_weight=1.0, tversky_weight=1.0, alpha=0.5, beta=0.5, gamma=2.0):
+        super().__init__()
+        self.focal = FocalLoss(alpha=alpha, gamma=gamma)
+        self.tversky = TverskyLoss(alpha=alpha, beta=beta)
+        self.focal_weight = focal_weight
+        self.tversky_weight = tversky_weight
+
+    def forward(self, pred, target):
+        loss_focal = self.focal(pred, target)
+        loss_tversky = self.tversky(pred, target)
+        return (self.focal_weight * loss_focal) + (self.tversky_weight * loss_tversky)
 
 
 LOSSES = {
     "dice_bce":   lambda **kw: LogitsLoss(CombinedLoss(**kw)),
     "dice_focal": lambda **kw: LogitsLoss(FocalDiceLoss(**kw)),
+    "tversky_focal": lambda **kw: LogitsLoss(FocalTverskyLoss(**kw)),
 }
 
 def build_loss(name, **kwargs):

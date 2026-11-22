@@ -19,3 +19,30 @@ Crack500:
     train: train.txt
     val: val.txt
     test: test.txt
+
+# Concrete defects, Roboflow "coco-segmentation" export, reorganised into
+# images/ and masks/.  The polygons live next to the images of each split in
+# _annotations.coco.json; the prepare block below turns them into the mask PNGs
+# on first use, so the export works as it is.  Images without any annotation
+# are left out.
+Concrete:
+  <<: *defaults
+  root: E:/concrete-v8
+  mask_ext: .png
+  img_dir:
+    train: images/train
+    val: images/valid
+    test: images/test
+  mask_dir:
+    train: masks/train
+    val: masks/val
+    test: masks/test
+  prepare:
+    kind: coco_segmentation
+    annotation: _annotations.coco.json
+    label_dir: labels/{split}
+    size: 256
+    supersample: 4
+    coverage_threshold: 25
+    skip_negatives: true
+

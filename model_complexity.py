@@ -8,20 +8,16 @@ from torchvision.ops import DeformConv2d
 from modules.swin_transformer import WindowAttention
 from student_lactnet import LACTNet as StudentLACTNet
 from teacher_lactnet import LACTNet as TeacherLACTNet
-from dcma_net import DCMANet
 
 
 MODEL_CLASSES = {
     "teacher": TeacherLACTNet,
     "student": StudentLACTNet,
-    "dcma": DCMANet,
 }
 IMAGE_SIZE = 256
-# DCMA-Net consumes whole 544x384 crack images instead of 256x256 tiles.
 MODEL_INPUT_SIZES = {
     "teacher": (IMAGE_SIZE, IMAGE_SIZE),
     "student": (IMAGE_SIZE, IMAGE_SIZE),
-    "dcma": (384, 544),
 }
 
 
@@ -95,7 +91,7 @@ def main():
     )
     parser.add_argument(
         "--model",
-        choices=["teacher", "student", "dcma", "all"],
+        choices=["teacher", "student", "all"],
         default="all",
         help="Model to measure (default: all)",
     )

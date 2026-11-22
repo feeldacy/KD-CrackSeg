@@ -5,6 +5,8 @@ This project trains and evaluates crack segmentation models with a teacher/stude
 - `train.py` for training
 - `evaluate.py` for testing and validation metrics
 
+The architecture of both networks — how the Swin and Conv branches are fused, what the DUC decoder and LAM do, how distillation is applied — is documented in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
 ## Environment setup
 
 Create and activate a virtual environment, then install dependencies:
@@ -42,6 +44,27 @@ Crack500:
     train: train.txt
     val: val.txt
     test: test.txt
+
+Concrete:
+  root: E:/concrete-v8
+  mask_threshold: 127
+  mask_ext: .png
+  img_dir:
+    train: images/train
+    val: images/valid
+    test: images/test
+  mask_dir:
+    train: masks/train
+    val: masks/val
+    test: masks/test
+  prepare:
+    kind: coco_segmentation
+    annotation: _annotations.coco.json
+    label_dir: labels/{split}
+    size: 256
+    supersample: 4
+    coverage_threshold: 25
+    skip_negatives: true
 ```
 
 If a dataset root is relative, pass it with `--data_root` or set the environment variable:
@@ -51,6 +74,59 @@ $env:DATA_ROOT = "D:/data"
 ```
 
 The project matches image and mask pairs automatically by dataset and split name.
+
+### Concrete dataset (Roboflow COCO-segmentation export)
+
+`Concrete` is a Roboflow export of concrete-surface defects with five classes
+(`crack`, `hole`, `honeycombe`, `pitting`, `spalling`). It is laid out as:
+
+```
+E:/concrete-v8/
+  images/
+    train/    *.jpg + _annotations.coco.json
+    valid/    *.jpg + _annotations.coco.json
+    test/     *.jpg + _annotations.coco.json
+  masks/      train/ val/ test/   <- generated
+  labels/     train/ val/ test/   <- generated
+```
+
+The polygons live next to the images of each split in `_annotations.coco.json`.
+They are turned into mask PNGs **automatically the first time the dataset is
+used** — `data/registry.py` sees the `prepare:` block in `datasets.yaml`,
+notices that the masks are missing and converts them on the spot. Converting
+all three splits takes about 14 seconds, so there is nothing to run by hand.
+
+To convert ahead of time, or to change how it is done, use the module:
+
+```powershell
+python -m data.prepare --src E:/concrete-v8
+```
+
+It writes `masks/<split>/*.png` (binary foreground, all classes merged) and
+`labels/<split>/*.png` (uint8 label map, 0 = background, 1-5 = class id). The
+label maps are not used by the binary pipeline, they only keep the per-class
+information for a future multi-class run.
+
+The conversion is deterministic: regenerating the masks reproduces the
+existing ones pixel for pixel.
+
+Details worth knowing:
+
+- **Polygons are rasterised at the training resolution.** LACTNet runs at
+  256x256 while the source images are 1280x1280, so the converter draws every
+  polygon at 4x the target size and area-downsamples it back. Measured against
+  a mask rasterised at full resolution, this loses 0.17 % of the foreground
+  pixels and produces fewer disconnected fragments than a nearest-neighbour
+  downsample. Change it with `size`, `supersample` and `coverage_threshold`
+  in the `prepare:` block of `datasets.yaml`, or with the matching command
+  line flags.
+- **Images without any annotation are excluded** from the training set
+  (103 train, 5 valid, 1 test). Set `skip_negatives: false` in the `prepare:`
+  block, or pass `--keep_negatives`, to keep them as background-only samples.
+- **Overlapping annotations** are resolved by draw order: the polygon that
+  comes later in the JSON wins.
+- The five classes are merged into one foreground channel, so the training run
+  is a binary "defect vs. background" segmentation.
 
 ## Training commands
 
@@ -63,6 +139,13 @@ python train.py --dataset DeepCrack --data_root D:/data --mode standard --epochs
 ```
 
 This trains the main teacher model (`TeacherLACTNet`).
+
+On the concrete dataset the same command applies, the root is absolute so no
+`--data_root` is needed:
+
+```powershell
+python train.py --dataset Concrete --mode standard --epochs 100 --bs 8 --lr 1e-4 --out runs/concrete_teacher
+```
 
 ### 2) Train the student model without a teacher
 
@@ -167,7 +250,32 @@ python evaluate.py --dataset DeepCrack --checkpoint runs/exp1/best.pth --model t
 --threshold THRESHOLD             Binary threshold for segmentation predictions (default: 0.5)
 --output OUTPUT                   Optional JSON file for saved evaluation metrics
 --vis_dir VIS_DIR                 Optional visualization output directory
---vis_index VIS_INDEX             Index of the sample to visualize (default: 0)
+--vis_index VIS_INDEX [VIS_INDEX ...]
+                                 Zero-based test sample indices to visualize (default: 0).
+                                 Accepts several indices, e.g. --vis_index 0 5 12
+--vis_count VIS_COUNT             Visualize the first N test samples. Overrides --vis_index
+--vis_all                         Visualize every test sample. Overrides --vis_index
+--vis_sheet                       Also write a single contact sheet PNG holding every visualization
+--vis_sheet_columns VIS_SHEET_COLUMNS
+                                 Number of columns in the contact sheet (default: 4)
+```
+
+### Visualizing several samples
+
+`--vis_index` takes any number of indices, and each visualization is written
+as its own PNG (`<index>_<file name>.png`) holding the input, the ground truth
+in green and the prediction in red. With `--vis_sheet` the same samples are
+additionally tiled into one `contact_sheet.png`:
+
+```powershell
+# the first 8 test samples, tiled into one contact sheet
+python evaluate.py --dataset Concrete --checkpoint runs/teacher_exp1_concrete/last.pth --model teacher --vis_dir output/concrete_teacher/visualization --vis_count 8 --vis_sheet
+
+# three specific samples
+python evaluate.py --dataset Concrete --checkpoint runs/teacher_exp1_concrete/last.pth --model teacher --vis_dir output/concrete_teacher/vis_indices --vis_index 3 10 25
+
+# every test sample
+python evaluate.py --dataset Concrete --checkpoint runs/teacher_exp1_concrete/last.pth --model teacher --vis_dir output/concrete_teacher/all --vis_all --vis_sheet
 ```
 
 ### Visualization during evaluation
@@ -208,6 +316,15 @@ python train.py --dataset DeepCrack --data_root D:/data --mode distill --teacher
 
 ```powershell
 python evaluate.py --dataset DeepCrack --checkpoint runs/exp1/best.pth --model teacher --output results/deepcrack_metrics.json
+```
+
+## Model complexity
+
+`model_complexity.py` reports parameter count, estimated FLOPs and inference
+FPS for the LACTNet teacher and student.
+
+```powershell
+python model_complexity.py --model all --device cuda
 ```
 
 ## Useful CLI checks
